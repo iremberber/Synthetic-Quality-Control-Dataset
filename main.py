@@ -1,55 +1,137 @@
+
 from numpy import random
 import numpy as np
 import pandas as pd
 
 random.seed(42)
 
-measurements_nominal_and_tolerance = {
-    "x_01": (10, 0.02),
-    "x_02": (15, 0.05),
-    "x_03": (22.5, 0.03),
-    "x_04": (8, 0.02),
-    "x_05": (12.5, 0.05),
-    "x_06": (30, 0.1),
-    "x_07": (6, 0.02),
-    "x_08": (18, 0.05),
-    "x_09": (25, 0.03),
-    "y_01": (14, 0.05),
-    "y_02": (9.5, 0.02),
-    "z_01": (4, 0.02),
-}
+tekli_kusur_orani = 0.24
+coklu_kusur_orani = 0.06
 
-extra_range = 0.02
+uretim_gunuv1 = pd.to_datetime("2026-10-26 08:00:00")
+uretim_gunuv2 = pd.to_datetime("2026-10-26 20:00:00")
 
-results = []
-acceptable = True
+parca_idleri = []
+uretim_saatleri = []
+kontrol_saatleri = []
+kontrol_sureleri = []
+kontrol_baslangiclari = []
+kontrolcu_musait_saati = None
 
-for i in measurements_nominal_and_tolerance:
-    min_value = measurements_nominal_and_tolerance[i][0] - measurements_nominal_and_tolerance[i][1]
-    max_value = measurements_nominal_and_tolerance[i][0] + measurements_nominal_and_tolerance[i][1]
-    random_min = min_value - extra_range
-    random_max = max_value + extra_range
-    measurements = np.random.uniform(random_min, random_max, size=3)
-    measurements = np.round(measurements, 2)
-    print(f"{i}: {measurements}")
-    out_of_tolerance_count = 0
-    for j in measurements:
-        if j < min_value or j > max_value:
-            print(f"WARNING! Measurement {j} for {i} is out of tolerance range ({min_value}, {max_value}).")
-            out_of_tolerance_count += 1
+for cevrim_no in range(1, 26):
+    for makina_no in ["IM01", "IM02"]:
+        for goz_no in range(1, 7):
 
-    if out_of_tolerance_count < 2:
-            print(f"It is acceptable. {out_of_tolerance_count} out-of-tolerance measurements out of {len(measurements)}")
-            acceptable = True
-    else:
-        print(f"WARNING! {out_of_tolerance_count} out-of-tolerance measurements out of {len(measurements)}. This is not acceptable.")
-        acceptable = False
+            if cevrim_no <= 12:
+                vardiya = "A"
+                uretim_gunu = uretim_gunuv1
+                vardiya_cevrimi = cevrim_no
+            else:
+                vardiya = "B"
+                uretim_gunu = uretim_gunuv2
+                vardiya_cevrimi = cevrim_no - 12
 
-    results.append((i, measurements_nominal_and_tolerance[i][0], measurements_nominal_and_tolerance[i][1], measurements, measurements.mean(), measurements.max()-measurements.min(), out_of_tolerance_count, acceptable))
+            uretim_saati = uretim_gunu + pd.Timedelta(
+                seconds=48 * (vardiya_cevrimi - 1)
+            )
 
-df_results = pd.DataFrame(results, columns=["Parameter", "Nominal", "Tolerance", "Measurements", "Mean", "Range", "Out_of_Tolerance_Count", "Acceptable"])
+            kontrol_suresi = round(np.random.uniform(10, 30), 2)
 
+            if kontrolcu_musait_saati is None:
+                kontrol_baslangici = uretim_saati
+            else:
+                kontrol_baslangici = max(
+                    uretim_saati,
+                    kontrolcu_musait_saati
+                )
 
-print("\nSummary of Out-of-Tolerance Measurements:")
-print(df_results)
-print(df_results["Acceptable"].all())
+            kontrol_saati = kontrol_baslangici + pd.Timedelta(
+                seconds=kontrol_suresi
+            )
+
+            kontrolcu_musait_saati = kontrol_saati
+
+            parca_id = (
+                f"CH-{makina_no}-C{cevrim_no:03d}-G{goz_no}-{vardiya}"
+            )
+
+            parca_idleri.append(parca_id)
+            uretim_saatleri.append(uretim_saati)
+            kontrol_saatleri.append(kontrol_saati)
+            kontrol_sureleri.append(kontrol_suresi)
+            kontrol_baslangiclari.append(kontrol_baslangici)
+
+tablo = pd.DataFrame({
+    "Parça ID": parca_idleri,
+    "Makina No": [p.split("-")[1] for p in parca_idleri],
+    "Çevrim No": [int(p.split("-")[2][1:]) for p in parca_idleri],
+    "Göz No": [int(p.split("-")[3][1:]) for p in parca_idleri],
+    "Vardiya": [p.split("-")[4] for p in parca_idleri],
+    "Üretim Saati": uretim_saatleri,
+    "Kontrol Başlangıcı": kontrol_baslangiclari,
+    "Kontrol Süresi (sn)": kontrol_sureleri,
+    "Kontrol Saati": kontrol_saatleri,
+    "Çizik-darbe": [False] * len(parca_idleri),
+    "Yüzeyde iz": [False] * len(parca_idleri),
+    "Toz-kir-yabancı cisim": [False] * len(parca_idleri),
+    "Çapak": [False] * len(parca_idleri),
+    "Eksik baskı": [False] * len(parca_idleri),
+    "Leke": [False] * len(parca_idleri),
+    "Buğulanma": [False] * len(parca_idleri),
+    "Çatlak/kırık": [False] * len(parca_idleri),
+    "Parça sesi": [False] * len(parca_idleri),
+    "Silik markalama": [False] * len(parca_idleri)
+})
+
+cok_kusurlu_parca = np.random.choice(
+    tablo["Parça ID"],
+    size=int(len(tablo) * coklu_kusur_orani),
+    replace=False
+)
+
+kusur_listesi = [
+    "Çizik-darbe",
+    "Yüzeyde iz",
+    "Toz-kir-yabancı cisim",
+    "Çapak",
+    "Eksik baskı",
+    "Leke",
+    "Buğulanma",
+    "Çatlak/kırık",
+    "Parça sesi",
+    "Silik markalama"
+]
+
+for parca_id in cok_kusurlu_parca:
+    kusur_sayisi = np.random.randint(2, 4)
+    kusur_turleri = random.choice(
+        kusur_listesi,
+        size=kusur_sayisi,
+        replace=False
+    )
+    for kusur in kusur_turleri:
+        tablo.loc[tablo["Parça ID"] == parca_id, kusur] = True
+
+tekli_kusurlu_parca = np.setdiff1d(
+    tablo["Parça ID"],
+    cok_kusurlu_parca
+)
+
+tekli_kusurlu_parca = np.random.choice(
+    tekli_kusurlu_parca,
+    size=int(len(tablo) * tekli_kusur_orani),
+    replace=False
+)
+
+for parca_id in tekli_kusurlu_parca:
+    kusur_turleri = random.choice(
+        kusur_listesi,
+        size=1,
+        replace=False
+    )
+    for kusur in kusur_turleri:
+        tablo.loc[tablo["Parça ID"] == parca_id, kusur] = True
+
+tablo.to_excel("kalite_kontrol_veri_seti.xlsx", index=False)
+
+print(tablo)
